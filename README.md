@@ -2,7 +2,7 @@
 <img width="1200" height="475" alt="LuseStay Logo" src="https://raw.githubusercontent.com/Blessed921/LuxeStay/main/public/luxestay-logo.png" />
 </div>
 
-# Run and deploy your AI Studio app
+# Run and deploy your app
 
 This contains everything you need to run your app locally.
 
