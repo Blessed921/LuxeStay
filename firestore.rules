@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // --- Listings ---
+    match /listings/{listingId} {
+      function isValidListing(data) {
+        return data.title is string && data.title.size() >= 5
+          && data.price is number && data.price > 0
+          && data.ownerId == request.auth.uid
+          && data.status == 'pending_approval';
+      }
+
+      allow read: if true;
+      allow create: if isSignedIn() && (isValidListing(request.resource.data) || isAdmin());
+      allow update: if (isOwner(resource.data.ownerId) 
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'description', 'price', 'images', 'amenities']))
+        || isAdmin();
+      allow delete: if isOwner(resource.data.ownerId) || isAdmin();
+    }
+
+    // --- Bookings ---
+    match /bookings/{bookingId} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        get(/databases/$(database)/documents/listings/$(resource.data.listingId)).data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+      
+      allow create: if isSignedIn() 
+        && request.resource.data.userId == request.auth.uid;
+      
+      allow update: if (isSignedIn() && (
+        (resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt', 'reversalReference']) && request.resource.data.status == 'cancelled')
+        ||
+        (get(/databases/$(database)/documents/listings/$(resource.data.listingId)).data.ownerId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) && request.resource.data.status == 'confirmed')
+      )) || isAdmin();
+    }
+
+    // --- Users ---
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isOwner(userId) && (!request.resource.data.keys().contains('role') || request.resource.data.role == 'client');
+      allow update: if (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().contains('role') || request.resource.data.role == resource.data.role))
+        || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // --- Reviews ---
+    match /reviews/{reviewId} {
+      function isValidReview(data) {
+        return data.listingId is string 
+          && data.userId == request.auth.uid
+          && data.rating is number && data.rating >= 1 && data.rating <= 5
+          && data.comment is string && data.comment.size() > 0;
+      }
+      allow read: if true;
+      allow create: if isSignedIn() && isValidReview(request.resource.data);
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // --- Messages ---
+    match /messages/{messageId} {
+      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+    }
+  }
+}

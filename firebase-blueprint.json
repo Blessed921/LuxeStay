@@ -1,0 +1,99 @@
+{
+  "entities": {
+    "Listing": {
+      "title": "Property Listing",
+      "description": "A property available for rent",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "location": { "type": "string" },
+        "images": { "type": "array" },
+        "amenities": { "type": "array" },
+        "ownerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "price", "location", "ownerId"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "A reservation for a property",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "listingId": { "type": "string" },
+        "userId": { "type": "string" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "totalPrice": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["listingId", "userId", "startDate", "endDate", "totalPrice", "status"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "Public user profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "host", "admin"] }
+      },
+      "required": ["uid"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "User review for a listing",
+      "type": "object",
+      "properties": {
+        "listingId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userImage": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["listingId", "userId", "rating", "comment"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Private message between users",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "listingId": { "type": "string" },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "receiverId", "content"]
+    }
+  },
+  "firestore": {
+    "listings": {
+      "schema": "Listing",
+      "description": "Main collection of property listings"
+    },
+    "bookings": {
+      "schema": "Booking",
+      "description": "User reservations"
+    },
+    "users": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "reviews": {
+      "schema": "Review",
+      "description": "Listing reviews"
+    },
+    "messages": {
+      "schema": "Message",
+      "description": "Direct messages"
+    }
+  }
+}
