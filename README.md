@@ -1,3 +1,7 @@
+<div align="center">
+<img width="1200" height="475" alt="LuseStay Logo" src="https://raw.githubusercontent.com/Blessed921/LuxeStay/main/public/luxestay-logo.png" />
+</div>
+
 # 🏰 LuxeStay: Premium Sanctuary Rentals & Operations Node
 
 An elite full-stack real estate partnership, fractional sanctuary rental, and operations registry application. Designed for discerning patrons and real estate hosts to inspect luxury residences, execute secure booking engagements, manage ledger settlements, and handle operations tickets in a fully secure environment.
