@@ -72,6 +72,22 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["senderId", "receiverId", "content"]
+    },
+    "ContactSubmission": {
+      "title": "Contact Submission",
+      "description": "A submission to the general contact or concierge ticket system",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "category": { "type": "string", "enum": ["GENERAL_INQUIRY", "HOST_APPLICATION", "FINANCIAL_LEDGER", "TRUST_SAFETY"] },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING_CONCIERGE", "RESOLVED", "IN_PROCESS"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "category", "subject", "message", "userId", "status"]
     }
   },
   "firestore": {
@@ -94,6 +110,10 @@
     "messages": {
       "schema": "Message",
       "description": "Direct messages"
+    },
+    "contact_submissions": {
+      "schema": "ContactSubmission",
+      "description": "General concierge and inquiry submissions"
     }
   }
 }

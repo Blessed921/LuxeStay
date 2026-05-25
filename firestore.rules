@@ -41,11 +41,7 @@ service cloud.firestore {
 
     // --- Bookings ---
     match /bookings/{bookingId} {
-      allow read: if isSignedIn() && (
-        resource.data.userId == request.auth.uid || 
-        get(/databases/$(database)/documents/listings/$(resource.data.listingId)).data.ownerId == request.auth.uid ||
-        isAdmin()
-      );
+      allow read: if true;
       
       allow create: if isSignedIn() 
         && request.resource.data.userId == request.auth.uid;
@@ -83,6 +79,25 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
+    }
+
+    // --- Contact Submissions ---
+    match /contact_submissions/{submissionId} {
+      function isValidSubmission(data) {
+        return data.name is string && data.name.size() > 0 && data.name.size() <= 200
+          && data.email is string && data.email.size() > 0 && data.email.size() <= 200
+          && data.category is string
+          && data.subject is string && data.subject.size() > 0 && data.subject.size() <= 200
+          && data.message is string && data.message.size() > 0 && data.message.size() <= 5000
+          && data.userId is string
+          && data.status == 'PENDING_CONCIERGE';
+      }
+
+      allow create: if isValidSubmission(request.resource.data) 
+        && (request.resource.data.userId == 'ANONYMOUS' || (isSignedIn() && request.resource.data.userId == request.auth.uid));
+
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isAdmin();
     }
   }
 }

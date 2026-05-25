@@ -8,9 +8,10 @@ import HostPage from "./pages/HostPage";
 import PortfolioPage from "./pages/PortfolioPage";
 import ProfilePage from "./pages/ProfilePage";
 import BookingSuccessPage from "./pages/BookingSuccessPage";
-import { auth, loginWithGoogle, logout, db } from "./lib/firebase";
+import ContactPage from "./pages/ContactPage";
+import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { MOCK_LISTINGS } from "./constants";
 
 // Navigation Component
@@ -48,6 +49,7 @@ const Navbar = ({
           <Link to="/explore" className="text-sm font-medium text-slate-500 hover:text-black transition-colors">Rentals</Link>
           <Link to="/portfolio" className="text-sm font-medium text-slate-500 hover:text-black transition-colors">Portfolios</Link>
           <Link to="/host" className="text-sm font-medium text-slate-500 hover:text-black transition-colors">Hosting</Link>
+          <Link to="/contact" className="text-sm font-medium text-slate-500 hover:text-black transition-colors">Contact</Link>
           
           <div className="h-4 w-px bg-slate-200 mx-2"></div>
 
@@ -96,6 +98,7 @@ const Navbar = ({
             <Link to="/explore" onClick={() => setIsMenuOpen(false)} className="text-lg font-medium border-b border-gray-50 pb-2">Rentals</Link>
             <Link to="/portfolio" onClick={() => setIsMenuOpen(false)} className="text-lg font-medium border-b border-gray-50 pb-2">Portfolios</Link>
             <Link to="/host" onClick={() => setIsMenuOpen(false)} className="text-lg font-medium border-b border-gray-50 pb-2">Hosting</Link>
+            <Link to="/contact" onClick={() => setIsMenuOpen(false)} className="text-lg font-medium border-b border-gray-50 pb-2">Contact</Link>
             {user ? (
                <>
                  <button onClick={() => { logout(); setIsMenuOpen(false); }} className="minimal-button w-full">LOG OUT</button>
@@ -228,6 +231,7 @@ const Footer = () => {
               <Link to="/explore" className="text-xs font-medium text-slate-600 hover:text-black transition-colors flex items-center gap-1">Explore Sanctuary</Link>
               <Link to="/profile" className="text-xs font-medium text-slate-600 hover:text-black transition-colors">User Profile</Link>
               <Link to="/" className="text-xs font-medium text-slate-600 hover:text-black transition-colors">Home Portal</Link>
+              <Link to="/contact" className="text-xs font-medium text-slate-600 hover:text-black transition-colors">Contact Support</Link>
             </nav>
           </div>
         </div>
@@ -275,9 +279,15 @@ export default function App() {
   ]);
   const [isInstant, setIsInstant] = useState(true);
   const [activeRitualLog, setActiveRitualLog] = useState("Locking settlement quantum...");
-  const [activeTab, setActiveTab] = useState<'inquiries' | 'transfers'>('inquiries');
+  const [activeTab, setActiveTab] = useState<'inquiries' | 'transfers' | 'tickets'>('inquiries');
   const [realInquiries, setRealInquiries] = useState<any[]>([]);
   const [inquiriesLoading, setInquiriesLoading] = useState(false);
+  const [replyContents, setReplyContents] = useState<Record<string, string>>({});
+  const [replyLoading, setReplyLoading] = useState<Record<string, boolean>>({});
+  
+  // Admin Ticket management
+  const [recentTickets, setRecentTickets] = useState<any[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
 
   useEffect(() => {
     const fetchAndCalculate = async () => {
@@ -286,9 +296,37 @@ export default function App() {
         return;
       }
       try {
-        const bookingsSnap = await getDocs(collection(db, "bookings"));
-        const bookings = bookingsSnap.docs.map(docSnap => docSnap.data());
-        
+        let bookings: any[] = [];
+
+        if (userRole === "admin") {
+          try {
+            const bookingsSnap = await getDocs(collection(db, "bookings"));
+            bookings = bookingsSnap.docs.map(docSnap => docSnap.data());
+          } catch (err) {
+            handleFirestoreError(err, OperationType.LIST, "bookings");
+          }
+        } else if (userRole === "host") {
+          try {
+            const listingsQ = query(collection(db, "listings"), where("ownerId", "==", user.uid));
+            const listingsSnap = await getDocs(listingsQ);
+            const hostListingIds = listingsSnap.docs.map(d => d.id);
+            
+            if (hostListingIds.length > 0) {
+              const fetchPromises = hostListingIds.map(async (listingId) => {
+                const bq = query(collection(db, "bookings"), where("listingId", "==", listingId));
+                const bSnap = await getDocs(bq);
+                return bSnap.docs.map(d => d.data());
+              });
+              const results = await Promise.all(fetchPromises);
+              bookings = results.flat();
+            }
+          } catch (err) {
+            handleFirestoreError(err, OperationType.LIST, "bookings");
+          }
+        } else {
+          bookings = [];
+        }
+
         let initialAmount = 42910.00;
         
         if (userRole === "admin") {
@@ -298,12 +336,7 @@ export default function App() {
           }, 0);
           initialAmount = 85200.00 + dynamicRevenue;
         } else if (userRole === "host") {
-          const listingsQ = query(collection(db, "listings"), where("ownerId", "==", user.uid));
-          const listingsSnap = await getDocs(listingsQ);
-          const hostListingIds = listingsSnap.docs.map(d => d.id);
-          
-          const hostBookings = bookings.filter(b => hostListingIds.includes(b.listingId));
-          const hostRevenue = hostBookings.reduce((sum, b) => {
+          const hostRevenue = bookings.reduce((sum, b) => {
             const amount = Number(b.price || 0) * Number(b.days || 1);
             return sum + amount;
           }, 0);
@@ -341,23 +374,46 @@ export default function App() {
         usersMap[docSnap.id] = docSnap.data();
       });
 
+      // Fetch received inquiries
       const q = query(
         collection(db, "messages"),
         where("receiverId", "==", uid)
       );
-      
       const msgSnap = await getDocs(q);
+
+      // Fetch replies sent by this host
+      const sentQ = query(
+        collection(db, "messages"),
+        where("senderId", "==", uid)
+      );
+      const sentSnap = await getDocs(sentQ);
+      const sentReplies = sentSnap.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAtDate: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date())
+        };
+      });
+
       const msgsList = msgSnap.docs.map(docSnap => {
         const data = docSnap.data();
         const listing = listingsMap[data.listingId] || MOCK_LISTINGS.find(m => m.id === data.listingId);
         const sender = usersMap[data.senderId];
+        
+        // Find matched replies sent by this host
+        const associatedReplies = sentReplies
+          .filter((r: any) => r.parentMessageId === docSnap.id)
+          .sort((a: any, b: any) => a.createdAtDate.getTime() - b.createdAtDate.getTime());
+
         return {
           id: docSnap.id,
           ...data,
           listingTitle: listing?.title || "Curated Residence",
           senderEmail: sender?.email || "guest@luxestay.com",
           senderDisplayName: sender?.displayName || sender?.email?.split('@')[0] || "Luxe Guest",
-          createdAtDate: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date())
+          createdAtDate: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date()),
+          replies: associatedReplies
         };
       });
 
@@ -370,11 +426,83 @@ export default function App() {
     }
   };
 
+  const handleSendReply = async (inqId: string, recipientId: string, listingId: string) => {
+    const text = replyContents[inqId]?.trim();
+    if (!text || !user) return;
+
+    setReplyLoading(prev => ({ ...prev, [inqId]: true }));
+    try {
+      const replyData = {
+        listingId,
+        senderId: user.uid,
+        receiverId: recipientId,
+        content: text,
+        parentMessageId: inqId,
+        createdAt: serverTimestamp()
+      };
+
+      await addDoc(collection(db, "messages"), replyData);
+
+      // Reset reply state
+      setReplyContents(prev => ({ ...prev, [inqId]: "" }));
+
+      // Reload inquiries
+      await fetchRealInquiries(user.uid, userRole);
+    } catch (err) {
+      console.error("Error sending reply message:", err);
+      alert("Operational issue sending response to key-vault server. Please retry.");
+    } finally {
+      setReplyLoading(prev => ({ ...prev, [inqId]: false }));
+    }
+  };
+
+  const fetchContactTickets = async () => {
+    if (!user) return;
+    setTicketsLoading(true);
+    try {
+      const q = collection(db, "contact_submissions");
+      const querySnapshot = await getDocs(q);
+      const list = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          createdAtDate: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date())
+        };
+      });
+      list.sort((a, b) => b.createdAtDate.getTime() - a.createdAtDate.getTime());
+      setRecentTickets(list);
+    } catch (err) {
+      console.error("Error fetching contact tickets for admin view:", err);
+    } finally {
+      setTicketsLoading(false);
+    }
+  };
+
+  const handleUpdateTicketStatus = async (ticketId: string, newStatus: string) => {
+    try {
+      const ticketRef = doc(db, "contact_submissions", ticketId);
+      await updateDoc(ticketRef, { status: newStatus });
+      await fetchContactTickets();
+    } catch (err) {
+      console.error("Error updating ticket status:", err);
+      try {
+        handleFirestoreError(err, OperationType.WRITE, "contact_submissions");
+      } catch (e) {
+        alert("Authorization issue. Failed to update clearance ticket status.");
+      }
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchRealInquiries(user.uid, userRole);
+      if (userRole === "admin") {
+        fetchContactTickets();
+      }
     } else {
       setRealInquiries([]);
+      setRecentTickets([]);
     }
   }, [user, userRole]);
 
@@ -675,10 +803,18 @@ export default function App() {
                                  >
                                    Settlement Records
                                  </button>
+                                 {userRole === "admin" && (
+                                   <button 
+                                     onClick={() => setActiveTab('tickets')}
+                                     className={`text-[10px] font-bold uppercase tracking-widest transition-colors pb-1 ${activeTab === 'tickets' ? 'text-black border-b border-black' : 'text-slate-400 hover:text-slate-600'}`}
+                                   >
+                                     Contact Tickets
+                                   </button>
+                                 )}
                                </div>
                              </div>
                              
-                             {activeTab === 'inquiries' ? (
+                             {activeTab === 'inquiries' && (
                                <div className="space-y-3 max-h-80 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
                                  {inquiriesLoading ? (
                                    <div className="flex items-center justify-center py-6 gap-2">
@@ -691,7 +827,7 @@ export default function App() {
                                    </div>
                                  ) : (
                                    realInquiries.map((inq) => {
-                                     const initials = inq.senderDisplayName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                                     const initials = inq.senderDisplayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
                                      return (
                                        <div key={inq.id} className="flex flex-col p-4 rounded-xl border border-slate-100 bg-white hover:border-slate-300 transition-all text-left">
                                           <div className="flex justify-between items-start gap-4">
@@ -706,13 +842,64 @@ export default function App() {
                                           </div>
                                           <div className="mt-3 bg-slate-50 border border-slate-100 p-3 rounded-lg text-xs text-slate-600 italic">
                                             "{inq.content}"
+                                           </div>
+
+                                           {/* Existing replies list */}
+                                           {inq.replies && inq.replies.length > 0 && (
+                                             <div className="space-y-2 pl-4 border-l-2 border-slate-200 pt-1">
+                                               {inq.replies.map((reply: any) => (
+                                                 <div key={reply.id} className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg text-xs text-slate-700">
+                                                   <div className="flex justify-between items-center mb-1">
+                                                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Host Response</span>
+                                                     <span className="text-[8px] text-slate-450 font-mono">
+                                                       {reply.createdAtDate.toLocaleDateString()} • {reply.createdAtDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                                     </span>
+                                                   </div>
+                                                   <p className="leading-relaxed font-normal text-slate-700">{reply.content}</p>
+                                                 </div>
+                                               ))}
+                                             </div>
+                                           )}
+
+                                           {/* Reply Input Form */}
+                                           <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+                                             <div className="flex gap-2">
+                                               <input 
+                                                 type="text"
+                                                 placeholder="Compose secure reply..."
+                                                 name={`reply-${inq.id}`}
+                                                 value={replyContents[inq.id] || ""}
+                                                 onChange={(e) => setReplyContents(prev => ({ ...prev, [inq.id]: e.target.value }))}
+                                                 onKeyDown={(e) => {
+                                                   if (e.key === 'Enter' && !e.shiftKey) {
+                                                     e.preventDefault();
+                                                     handleSendReply(inq.id, inq.senderId, inq.listingId);
+                                                   }
+                                                 }}
+                                                 className="flex-1 bg-slate-50 border border-slate-200/65 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-slate-900 focus:bg-white transition-all text-slate-800"
+                                               />
+                                               <button
+                                                 type="button"
+                                                 disabled={replyLoading[inq.id] || !(replyContents[inq.id]?.trim())}
+                                                 onClick={() => handleSendReply(inq.id, inq.senderId, inq.listingId)}
+                                                 className="px-3 py-1.5 bg-black text-white text-[10px] font-bold uppercase tracking-wider rounded-lg hover:bg-slate-800 disabled:opacity-40 leading-none cursor-pointer flex items-center justify-center min-w-[60px]"
+                                               >
+                                                 {replyLoading[inq.id] ? (
+                                                   <Loader2 size={10} className="animate-spin" />
+                                                 ) : (
+                                                   "Send"
+                                                 )}
+                                               </button>
+                                             </div>
+                                           </div>
                                           </div>
-                                       </div>
-                                     );
-                                   })
-                                 )}
+                                      );
+                                    })
+                                  )}
                                </div>
-                             ) : (
+                             )}
+
+                             {activeTab === 'transfers' && (
                                <div className="space-y-3 max-h-80 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
                                  {recentTransfers.length > 0 ? (
                                    recentTransfers.map((item, idx) => (
@@ -737,6 +924,73 @@ export default function App() {
                                  )}
                                </div>
                              )}
+
+                             {activeTab === 'tickets' && userRole === 'admin' && (
+                               <div className="space-y-3 max-h-80 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                                 {ticketsLoading ? (
+                                   <div className="flex items-center justify-center py-6 gap-2">
+                                     <Loader2 size={16} className="animate-spin text-slate-400" />
+                                     <span className="text-xs text-slate-400 font-mono">Syncing tickets...</span>
+                                   </div>
+                                 ) : recentTickets.length === 0 ? (
+                                   <div className="text-center py-8 bg-slate-50 border border-slate-100/60 rounded-xl">
+                                     <p className="text-xs text-slate-400 italic">No concierge tickets received yet.</p>
+                                   </div>
+                                 ) : (
+                                   recentTickets.map((ticket) => {
+                                     const initials = ticket.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || "C";
+                                     return (
+                                       <div key={ticket.id} className="flex flex-col p-4 rounded-xl border border-slate-100 bg-white hover:border-slate-300 transition-all text-left space-y-3">
+                                         <div className="flex justify-between items-start gap-3">
+                                           <div className="flex items-center gap-3">
+                                             <div className="w-8 h-8 bg-slate-900 text-white rounded-full flex items-center justify-center text-xs font-bold uppercase">
+                                               {initials}
+                                             </div>
+                                             <div>
+                                               <p className="text-xs font-semibold">{ticket.name}</p>
+                                               <p className="text-[10px] text-slate-500">{ticket.email}</p>
+                                               <p className="text-[9px] text-slate-400">
+                                                 {ticket.createdAtDate.toLocaleDateString()} at {ticket.createdAtDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                               </p>
+                                             </div>
+                                           </div>
+                                         </div>
+
+                                         <div className="space-y-1">
+                                           <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                              Subject: <span className="text-slate-900 font-semibold">{ticket.subject}</span>
+                                           </p>
+                                           <p className="text-xs bg-slate-50 p-2.5 rounded-lg text-slate-600 border border-slate-100 leading-relaxed italic">
+                                             "{ticket.message}"
+                                           </p>
+                                         </div>
+
+                                         <div className="flex items-center justify-between pt-1 border-t border-slate-50 text-[10px]">
+                                           <div className="flex items-center gap-2">
+                                             <span className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Category:</span>
+                                             <span className="text-[9px] text-slate-800 font-medium px-1.5 py-0.5 bg-slate-100 border border-slate-200/50 rounded font-mono">
+                                               {ticket.category?.replace('_', ' ')}
+                                             </span>
+                                           </div>
+
+                                           <div className="flex items-center gap-1">
+                                             <select 
+                                               value={ticket.status}
+                                               onChange={(e) => handleUpdateTicketStatus(ticket.id, e.target.value)}
+                                               className="bg-slate-50 border border-slate-200 text-[10px] font-bold rounded px-1.5 py-1 text-slate-700 focus:outline-none appearance-none cursor-pointer"
+                                             >
+                                               <option value="PENDING_CONCIERGE">Pending</option>
+                                               <option value="IN_PROCESS">In Process</option>
+                                               <option value="RESOLVED">Resolved</option>
+                                             </select>
+                                           </div>
+                                         </div>
+                                       </div>
+                                     );
+                                   })
+                                 )}
+                               </div>
+                             )}
                           </div>
                         </div>
                       </div>
@@ -752,6 +1006,7 @@ export default function App() {
           <Route path="/listing/:id" element={<ListingDetailPage />} />
           <Route path="/host" element={<HostPage userRole={userRole} />} />
           <Route path="/booking-success" element={<BookingSuccessPage />} />
+          <Route path="/contact" element={<ContactPage />} />
         </Routes>
         <Footer />
 

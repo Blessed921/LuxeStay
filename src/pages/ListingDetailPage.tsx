@@ -23,6 +23,84 @@ const ListingDetailPage = () => {
   const [guests, setGuests] = useState(2);
   const [loading, setLoading] = useState(false);
   const [checkIn, setCheckIn] = useState(new Date().toISOString().split('T')[0]);
+
+  // Dynamic booking calendar & availability states
+  const [existingBookings, setExistingBookings] = useState<any[]>([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
+
+  // Parse check-in date string robustly, returning local Date (00:00:00)
+  const parseBookingDate = (dateStr: string) => {
+    if (!dateStr) return new Date();
+    const cleanStr = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+    const parts = cleanStr.split('-');
+    if (parts.length === 3) {
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    }
+    return new Date(dateStr);
+  };
+
+  // Calculate check-in range boundaries
+  const getBookingRange = (checkInStr: string, daysCount: number) => {
+    const start = parseBookingDate(checkInStr);
+    const end = new Date(start.getTime() + daysCount * 24 * 60 * 60 * 1000);
+    return { start, end };
+  };
+
+  const getActiveConflict = () => {
+    if (!listing) return null;
+
+    // 1. If listing is permanent acquisition and already sold
+    if (listing.type === 'sale') {
+      const activeSale = existingBookings.find(b => b.status === 'confirmed');
+      if (activeSale) {
+        return {
+          conflict: true,
+          message: "PERMANENTLY ACQUIRED",
+          details: "This asset has been bought and is structurally deed-locked."
+        };
+      }
+      return null;
+    }
+
+    // 2. If listing is rental, check for date interval overlap
+    const proposed = getBookingRange(checkIn, days);
+    
+    // Prevent booking in the past
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (proposed.start.getTime() < today.getTime()) {
+      return {
+        conflict: true,
+        message: "PAST DATES SELECTED",
+        details: "Check-in cannot be initiated for past timeline schedules."
+      };
+    }
+
+    for (const booking of existingBookings) {
+      if (booking.status === 'cancelled') continue;
+      
+      const bDays = Number(booking.days || 1);
+      const bCheckIn = booking.checkIn;
+      if (!bCheckIn) continue;
+
+      const activeRange = getBookingRange(bCheckIn, bDays);
+      
+      // Overlap formula: proposedStart < activeEnd && activeStart < proposedEnd
+      if (proposed.start.getTime() < activeRange.end.getTime() && activeRange.start.getTime() < proposed.end.getTime()) {
+        const checkInFmt = activeRange.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const checkOutFmt = activeRange.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return {
+          conflict: true,
+          message: "RESERVATION COLLISION",
+          details: `This sanctuary is fully booked from ${checkInFmt} to ${checkOutFmt}.`
+        };
+      }
+    }
+
+    return null;
+  };
+
+  const conflict = getActiveConflict();
   
   // Settlement State
   const [showSettlementPortal, setShowSettlementPortal] = useState(false);
@@ -97,6 +175,30 @@ const ListingDetailPage = () => {
 
     fetchListing();
   }, [id]);
+
+  useEffect(() => {
+    const fetchExistingBookings = async () => {
+      if (!listing?.id) return;
+      setLoadingBookings(true);
+      try {
+        const q = query(
+          collection(db, "bookings"),
+          where("listingId", "==", listing.id)
+        );
+        const querySnapshot = await getDocs(q);
+        const bookingsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Keep confirmed/active bookings (exclude cancelled)
+        const activeBookings = bookingsList.filter((b: any) => b.status !== "cancelled");
+        setExistingBookings(activeBookings);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.LIST, "bookings");
+      } finally {
+        setLoadingBookings(false);
+      }
+    };
+
+    fetchExistingBookings();
+  }, [listing?.id]);
 
   const fetchReviews = async (listingId: string) => {
     setLoadingReviews(true);
@@ -198,6 +300,12 @@ const ListingDetailPage = () => {
     if (!auth.currentUser) {
       setAuthReason("Please sign in to initiate a booking protocol.");
       setShowAuthModal(true);
+      return;
+    }
+
+    const currentConflict = getActiveConflict();
+    if (currentConflict) {
+      alert(`Ledger Lock: ${currentConflict.message}. ${currentConflict.details}`);
       return;
     }
 
@@ -520,9 +628,15 @@ const ListingDetailPage = () => {
                     <p className="text-4xl font-light">${listing.price.toLocaleString()}</p>
                   </div>
                   <div className="flex">
-                    <span className="status-badge max-w-full truncate whitespace-normal">
-                      {listing.type === 'sale' ? 'Available for Acquisition' : 'Available for Residency'}
-                    </span>
+                    {listing.type === 'sale' && existingBookings.some(b => b.status === 'confirmed') ? (
+                      <span className="bg-red-50 text-red-600 border border-red-100/50 text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-full flex items-center gap-1.5 animate-pulse">
+                        <Lock size={12} /> Sold Check Out
+                      </span>
+                    ) : (
+                      <span className="status-badge max-w-full truncate whitespace-normal">
+                        {listing.type === 'sale' ? 'Available for Acquisition' : 'Available for Residency'}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -531,20 +645,21 @@ const ListingDetailPage = () => {
                     <div className="p-4 rounded-xl border border-slate-100 space-y-4">
                       <div className="flex items-center justify-between text-xs font-semibold">
                          <div className="flex items-center gap-2">
-                            <Calendar size={14} className="text-slate-400" />
+                            <Calendar size={14} className="text-slate-450" />
                             <span>Check In</span>
                          </div>
                          <input 
                           type="date" 
                           value={checkIn}
+                          min={new Date().toISOString().split('T')[0]}
                           onChange={(e) => setCheckIn(e.target.value)}
-                          className="bg-transparent border-none focus:outline-none text-right cursor-pointer"
+                          className="bg-transparent border-none focus:outline-none text-right cursor-pointer font-semibold text-slate-800"
                          />
                       </div>
                       <div className="h-px bg-slate-50"></div>
                       <div className="flex items-center justify-between text-xs font-semibold">
                          <div className="flex items-center gap-2">
-                            <Users size={14} className="text-slate-400" />
+                            <Users size={14} className="text-slate-450" />
                             <span>Guests</span>
                          </div>
                          <div className="flex items-center gap-3">
@@ -556,7 +671,7 @@ const ListingDetailPage = () => {
                       <div className="h-px bg-slate-50"></div>
                       <div className="flex items-center justify-between text-xs font-semibold">
                          <div className="flex items-center gap-2">
-                            <Calendar size={14} className="text-slate-400" />
+                            <Calendar size={14} className="text-slate-450" />
                             <span>Duration (Nights)</span>
                          </div>
                          <div className="flex items-center gap-3">
@@ -566,28 +681,75 @@ const ListingDetailPage = () => {
                          </div>
                       </div>
                     </div>
+
+                    {/* Blackout dates schedule list */}
+                    {existingBookings.length > 0 && (
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reserved Schedule</p>
+                          <span className="text-[8px] font-mono tracking-widest text-slate-500 bg-slate-200/50 px-2 py-0.5 rounded font-bold uppercase">
+                            {existingBookings.length} Blocked
+                          </span>
+                        </div>
+                        <div className="max-h-24 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+                          {existingBookings.map((b, idx) => {
+                            const bDays = Number(b.days || 1);
+                            const bCheckIn = b.checkIn;
+                            if (!bCheckIn) return null;
+                            const range = getBookingRange(bCheckIn, bDays);
+                            const startFmt = range.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            const endFmt = range.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                            return (
+                              <div key={idx} className="flex justify-between items-center text-[10px] font-mono text-slate-600 bg-white border border-slate-100/80 px-2.5 py-1.5 rounded-lg">
+                                <span className="flex items-center gap-1.5 font-medium">
+                                  <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
+                                  {startFmt} – {endFmt}
+                                </span>
+                                <span className="text-slate-400 text-[9px] font-semibold">{bDays}N</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="p-6 rounded-xl bg-slate-50 border border-slate-100">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Protocol Note</p>
                     <p className="text-xs text-slate-500 leading-relaxed italic">
-                      This assets is classified as a Permanent Acquisition. One-time settlement includes full property rights and infrastructure access protocols.
+                      This asset is classified as a Permanent Acquisition. One-time settlement includes full property rights and infrastructure access protocols.
                     </p>
+                  </div>
+                )}
+
+                {conflict && (
+                  <div className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3 text-left">
+                    <ShieldAlert size={18} className="text-red-500 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-[10px] font-bold text-red-650 uppercase tracking-wider">{conflict.message}</p>
+                      <p className="text-[11px] text-red-500 font-normal mt-0.5 leading-relaxed">{conflict.details}</p>
+                    </div>
                   </div>
                 )}
 
                 <div className="space-y-4">
                   <button 
                     onClick={handleBooking}
-                    disabled={loading}
-                    className="minimal-button w-full py-4 flex items-center justify-center gap-3 rounded-2xl"
+                    disabled={loading || !!conflict}
+                    className="minimal-button w-full py-4 flex items-center justify-center gap-3 rounded-2xl cursor-pointer disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed"
                   >
                     {loading && <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>}
-                    {loading ? "Synchronizing Settlement..." : "Initiate Protocol Settlement"}
+                    {conflict ? (
+                      conflict.message === "PERMANENTLY ACQUIRED" ? "STRUCTURALLY LOCK DEED" : "UNAVAILABLE FOR DATES"
+                    ) : loading ? (
+                      "Synchronizing Settlement..."
+                    ) : (
+                      "Initiate Protocol Settlement"
+                    )}
                   </button>
                   
                   <div className="flex items-center justify-center gap-2 pt-2">
-                    <Shield size={10} className="text-slate-300" />
+                    <Shield size={10} className="text-slate-350" />
                     <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Encrypted Sanctuary Protocol</p>
                   </div>
                 </div>
@@ -1156,6 +1318,91 @@ const ListingDetailPage = () => {
                     <p className="text-xs text-slate-500 font-mono">HASH: {Math.random().toString(16).substring(2, 10).toUpperCase()}</p>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showContactModal && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowContactModal(false)}
+              className="fixed inset-0 bg-slate-950/85 backdrop-blur-md cursor-pointer"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white border border-slate-100 rounded-[32px] p-6 md:p-8 max-w-lg w-full relative z-[310] shadow-2xl space-y-6 text-left"
+            >
+              <button 
+                onClick={() => setShowContactModal(false)}
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-black hover:bg-slate-50 rounded-full transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Direct Message Client</span>
+                <h3 className="text-2xl font-light tracking-tight">Contact Property Management</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Send a secure inquiry regarding this curated asset. Your request will register directly on the host's ledger console.
+                </p>
+              </div>
+
+              {listing && (
+                <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <img 
+                    src={listing.images?.[0] || "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80"} 
+                    alt={listing.title} 
+                    referrerPolicy="no-referrer"
+                    className="w-16 h-16 rounded-xl object-cover shrink-0" 
+                  />
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 line-clamp-1">{listing.title}</h4>
+                    <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-1">
+                      <MapPin size={10} />
+                      {listing.location}
+                    </p>
+                    <p className="text-[11px] text-slate-900 font-semibold font-mono mt-1">
+                      ${listing.price.toLocaleString()} / night
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Inquiry Message</label>
+                <textarea
+                  value={messageContent}
+                  onChange={(e) => setMessageContent(e.target.value)}
+                  placeholder="Inquire about custom dates, special service request protocols, or check-in clearance arrangements..."
+                  rows={4}
+                  className="w-full text-xs font-medium bg-slate-50 border border-slate-200/80 rounded-2xl p-4 focus:outline-none focus:border-slate-900 focus:bg-white resize-none transition-all placeholder:text-slate-400 text-slate-800 leading-relaxed"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-[9px] text-slate-400 font-mono">
+                  Channel ID: SECURE_COMMS_MUTEX
+                </p>
+                <button
+                  type="button"
+                  onClick={handleContactOwner}
+                  disabled={isSendingMessage || !messageContent.trim()}
+                  className="minimal-button px-6 py-3 rounded-xl flex items-center gap-2 cursor-pointer disabled:opacity-40"
+                >
+                  {isSendingMessage ? (
+                    <div className="w-4 h-4 border-2 border-white/25 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    <Send size={12} />
+                  )}
+                  <span>{isSendingMessage ? "Transmitting..." : "Send Message"}</span>
+                </button>
               </div>
             </motion.div>
           </div>

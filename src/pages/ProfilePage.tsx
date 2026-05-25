@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { collection, query, where, getDocs, orderBy, updateDoc, doc } from "firebase/firestore";
-import { Calendar, MapPin, Receipt, ShieldCheck, ChevronRight, XCircle, Loader2, ShieldAlert, CheckCircle2, X } from "lucide-react";
+import { Calendar, MapPin, Receipt, ShieldCheck, ChevronRight, XCircle, Loader2, ShieldAlert, CheckCircle2, X, Lock } from "lucide-react";
 import { MOCK_LISTINGS } from "../constants";
 
 const ProfilePage = () => {
@@ -14,7 +14,86 @@ const ProfilePage = () => {
   const [bookingToCancel, setBookingToCancel] = useState<any | null>(null);
   const [successNotification, setSuccessNotification] = useState<string | null>(null);
   const [errorNotification, setErrorNotification] = useState<string | null>(null);
+  const [myMessages, setMyMessages] = useState<any[]>([]);
   const user = auth.currentUser;
+
+  const getBookingStatusDetails = (booking: any) => {
+    if (booking.status === 'cancelled') {
+      return {
+        label: "Cancelled",
+        classes: "bg-red-50 text-red-650 border border-red-100/50"
+      };
+    }
+
+    if (!booking.checkIn) {
+      return {
+        label: "Confirmed",
+        classes: "bg-green-50 text-green-650 border border-green-100"
+      };
+    }
+
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const todayString = `${year}-${month}-${day}`;
+
+      let checkInString = booking.checkIn;
+      if (checkInString.includes("T")) {
+        checkInString = checkInString.split("T")[0];
+      }
+      checkInString = checkInString.trim();
+
+      if (checkInString === todayString) {
+        return {
+          label: "Active (Today)",
+          classes: "bg-amber-50 text-amber-650 border border-amber-100"
+        };
+      } else if (checkInString < todayString) {
+        return {
+          label: "Past / Completed",
+          classes: "bg-slate-100 text-slate-500 border border-slate-200"
+        };
+      } else {
+        return {
+          label: "Confirmed",
+          classes: "bg-green-50 text-green-650 border border-green-100"
+        };
+      }
+    } catch (_) {
+      return {
+        label: "Confirmed",
+        classes: "bg-green-50 text-green-650 border border-green-100"
+      };
+    }
+  };
+
+  const isBookingCancellable = (booking: any): boolean => {
+    if (!booking) return false;
+    if (booking.status === 'cancelled') return false;
+    if (!booking.checkIn) return false;
+
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const todayString = `${year}-${month}-${day}`;
+
+      let checkInString = booking.checkIn;
+      if (checkInString.includes("T")) {
+        checkInString = checkInString.split("T")[0];
+      }
+      checkInString = checkInString.trim();
+
+      // Only allow cancellation if check-in is strictly after today
+      return checkInString > todayString;
+    } catch (err) {
+      console.error("isBookingCancellable error:", err);
+      return false;
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -37,6 +116,53 @@ const ProfilePage = () => {
         );
         const listingSnapshot = await getDocs(lq);
         setMyListings(listingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        // Fetch My Messages / Enquiries Group
+        const mq = query(
+          collection(db, "messages"),
+          where("senderId", "==", user.uid)
+        );
+        const receivedQ = query(
+          collection(db, "messages"),
+          where("receiverId", "==", user.uid)
+        );
+
+        const [msgSnap, recSnap] = await Promise.all([
+          getDocs(mq),
+          getDocs(receivedQ)
+        ]);
+
+        const sentList = msgSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const recList = recSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        const primaryInquiries = sentList.filter((m: any) => !m.parentMessageId);
+        const hostReplies = recList.filter((m: any) => m.parentMessageId);
+
+        const groupInquiries = primaryInquiries.map((inq: any) => {
+          const matchingReplies = hostReplies
+            .filter((r: any) => r.parentMessageId === inq.id)
+            .sort((a: any, b: any) => {
+              const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : (a.createdAt ? new Date(a.createdAt) : new Date());
+              const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : (b.createdAt ? new Date(b.createdAt) : new Date());
+              return dateA.getTime() - dateB.getTime();
+            });
+
+          const lData = MOCK_LISTINGS.find(m => m.id === inq.listingId);
+
+          return {
+            ...inq,
+            listingTitle: lData?.title || "Curated Residence",
+            listingImage: lData?.images?.[0] || "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80",
+            createdAtDate: inq.createdAt?.toDate ? inq.createdAt.toDate() : (inq.createdAt ? new Date(inq.createdAt) : new Date()),
+            replies: matchingReplies.map((r: any) => ({
+              ...r,
+              createdAtDate: r.createdAt?.toDate ? r.createdAt.toDate() : (r.createdAt ? new Date(r.createdAt) : new Date())
+            }))
+          };
+        });
+
+        groupInquiries.sort((a, b) => b.createdAtDate.getTime() - a.createdAtDate.getTime());
+        setMyMessages(groupInquiries);
       } catch (err) {
         console.error("Error fetching profile data:", err);
       } finally {
@@ -49,6 +175,11 @@ const ProfilePage = () => {
 
   const handleCancelBooking = async (booking: any) => {
     if (!booking) return;
+    if (!isBookingCancellable(booking)) {
+      setErrorNotification("This stay cannot be cancelled because the reservation check-in date has already arrived or passed.");
+      setBookingToCancel(null);
+      return;
+    }
     setCancellingId(booking.id);
     try {
       // 1. Process reversal via server protocol
@@ -188,9 +319,14 @@ const ProfilePage = () => {
                             <h3 className="text-lg font-semibold">{booking.listingName}</h3>
                             <p className="text-xs text-slate-400 flex items-center gap-1"><MapPin size={12} /> Confirmed Location</p>
                           </div>
-                          <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded ${booking.status === 'cancelled' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                            {booking.status || 'Confirmed'}
-                          </span>
+                          {(() => {
+                            const details = getBookingStatusDetails(booking);
+                            return (
+                              <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded ${details.classes}`}>
+                                {details.label}
+                              </span>
+                            );
+                          })()}
                         </div>
                         
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-4 border-t border-slate-50">
@@ -221,13 +357,20 @@ const ProfilePage = () => {
                           </div>
                           <div>
                             {booking.status !== 'cancelled' && (
-                              <button 
-                                onClick={() => setBookingToCancel(booking)}
-                                className="flex items-center gap-2 text-[10px] font-bold text-red-400 hover:text-red-600 transition-colors cursor-pointer"
-                              >
-                                <XCircle size={12} />
-                                Cancel Stay
-                              </button>
+                              isBookingCancellable(booking) ? (
+                                <button 
+                                  onClick={() => setBookingToCancel(booking)}
+                                  className="flex items-center gap-2 text-[10px] font-bold text-red-400 hover:text-red-700 transition-colors cursor-pointer"
+                                >
+                                  <XCircle size={12} />
+                                  Cancel Stay
+                                </button>
+                              ) : (
+                                <span className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 font-mono" title="Cancellations are locked once check-in date begins or has completed.">
+                                  <Lock size={10} className="text-slate-400" />
+                                  Lock Active
+                                </span>
+                              )
                             )}
                           </div>
                         </div>
@@ -240,6 +383,65 @@ const ProfilePage = () => {
                 <div className="minimal-card p-12 text-center space-y-4 border-dashed border-slate-200">
                   <Receipt className="text-slate-200 mx-auto" size={32} />
                   <p className="text-sm text-slate-400">No reservations found yet.</p>
+                </div>
+              )}
+            </section>
+
+            <section>
+              <h2 className="text-xl font-semibold mb-8 flex items-center gap-3">
+                Residence Enquiries & Comms
+                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-400">{myMessages.length}</span>
+              </h2>
+
+              {loading ? (
+                <div className="h-24 w-full bg-slate-50 animate-pulse rounded-2xl"></div>
+              ) : myMessages.length > 0 ? (
+                <div className="space-y-6">
+                  {myMessages.map((inq) => (
+                    <div key={inq.id} className="minimal-card p-6 space-y-4 text-left">
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-xl bg-slate-100 overflow-hidden flex-shrink-0">
+                            <img src={inq.listingImage} className="w-full h-full object-cover" alt="" referrerPolicy="no-referrer" />
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Enquiry regarding:</span>
+                            <h4 className="text-sm font-bold">{inq.listingTitle}</h4>
+                            <p className="text-[9px] text-slate-400">{inq.createdAtDate.toLocaleDateString()} • {inq.createdAtDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-[#fafafa] border border-slate-100 p-4 rounded-xl text-xs text-slate-600 italic">
+                        "{inq.content}"
+                      </div>
+
+                      {/* Grouped Replies Thread */}
+                      {inq.replies && inq.replies.length > 0 ? (
+                        <div className="space-y-3 pl-6 border-l-2 border-slate-200 pt-1">
+                          {inq.replies.map((reply: any) => (
+                            <div key={reply.id} className="bg-slate-50 border border-slate-100 p-3.5 rounded-xl text-xs text-slate-700">
+                              <div className="flex justify-between items-center mb-1.5">
+                                <span className="text-[9px] font-extrabold uppercase tracking-wider text-black">Host Response</span>
+                                <span className="text-[8px] text-slate-400 font-mono">
+                                  {reply.createdAtDate.toLocaleDateString()} • {reply.createdAtDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </span>
+                              </div>
+                              <p className="leading-relaxed font-normal text-slate-700">{reply.content}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="pl-6 border-l-2 border-slate-200 text-[10px] text-slate-400 italic">
+                          Waiting for property host to respond...
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="minimal-card p-12 text-center space-y-4 border-dashed border-slate-200">
+                  <p className="text-sm text-slate-400 text-center">No active enquiries sent to property hosts yet.</p>
                 </div>
               )}
             </section>
