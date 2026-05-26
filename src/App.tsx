@@ -9,7 +9,7 @@ import PortfolioPage from "./pages/PortfolioPage";
 import ProfilePage from "./pages/ProfilePage";
 import BookingSuccessPage from "./pages/BookingSuccessPage";
 import ContactPage from "./pages/ContactPage";
-import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType } from "./lib/firebase";
+import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, isFirebaseConfigured } from "./lib/firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { MOCK_LISTINGS } from "./constants";
@@ -248,6 +248,74 @@ const Footer = () => {
 };
 
 export default function App() {
+  if (!isFirebaseConfigured) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-6 selection:bg-white selection:text-black">
+        <div className="max-w-2xl w-full bg-slate-950/80 border border-slate-800/80 backdrop-blur-md rounded-3xl p-8 sm:p-12 space-y-8 shadow-2xl relative overflow-hidden">
+          {/* Subtle neon alignment glow */}
+          <div className="absolute top-0 left-1/4 right-1/4 h-px bg-gradient-to-r from-transparent via-cyan-500 to-transparent"></div>
+          
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 bg-slate-800/80 border border-slate-755/50 font-mono text-[10px] uppercase tracking-widest text-cyan-400 px-3 py-1.5 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              LuxeStay Operation Portal
+            </div>
+            
+            <h1 className="text-3xl sm:text-4xl font-light tracking-tight">
+              Awaiting <span className="font-semibold text-cyan-400">Environment Allocation</span>
+            </h1>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Your front-end application successfully compiled and loaded on Vercel. However, to synchronize listings, authenticate elite patrons, and record settlement portfolios, we require standard Firebase credentials configured in the environment.
+            </p>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800/60 rounded-xl p-5 space-y-4">
+            <h3 className="font-semibold text-xs uppercase tracking-wider text-slate-200">Required Vercel Environment Configuration</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              In Vercel, navigate to <strong>Settings &rarr; Environment Variables</strong>, then add the following <strong>both keys and values</strong>:
+            </p>
+            
+            <div className="space-y-2 font-mono text-xs">
+              {[
+                "VITE_FIREBASE_API_KEY",
+                "VITE_FIREBASE_AUTH_DOMAIN",
+                "VITE_FIREBASE_PROJECT_ID",
+                "VITE_FIREBASE_STORAGE_BUCKET",
+                "VITE_FIREBASE_MESSAGING_SENDER_ID",
+                "VITE_FIREBASE_APP_ID"
+              ].map(key => (
+                <div key={key} className="flex items-center justify-between bg-slate-950/55 p-2 rounded-lg border border-slate-800 text-left">
+                  <span className="text-slate-300 font-semibold">{key}</span>
+                  <span className="text-[10px] text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded font-sans font-bold">Awaiting Value</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border border-slate-800/80 rounded-xl p-5 bg-slate-950/40 text-xs text-slate-300 leading-relaxed space-y-2">
+            <p className="font-semibold text-slate-200">💡 Critical Deployment Notice:</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>Add <strong>both the variable name (Key) and your Firebase secret configuration values (Value)</strong>.</li>
+              <li>Your Firebase settings can be found inside your Firebase project console under Project Settings under the Web app configuration script copy section.</li>
+              <li>After saving the variables, trigger a fresh redeploy or update in Vercel to load the active variables.</li>
+            </ul>
+          </div>
+
+          <div className="pt-2 flex justify-end">
+            <a 
+              href="https://vercel.com" 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-white uppercase tracking-widest font-sans transition-all"
+            >
+              Verify on Vercel Dashboard <span className="ml-1 text-cyan-400">&nearrow;</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [dbRole, setDbRole] = useState<'client' | 'host' | 'admin'>('client');

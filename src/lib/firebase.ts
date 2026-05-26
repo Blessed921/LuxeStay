@@ -16,7 +16,20 @@ const resolvedConfig = {
   firestoreDatabaseId: metaEnv.VITE_FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId
 };
 
-const app = initializeApp(resolvedConfig);
+// Check config validity to prevent startup crash on platforms like Vercel before env keys are added
+export const isFirebaseConfigured = !!(resolvedConfig.apiKey && resolvedConfig.projectId);
+
+// Use a safe fallback configuration if real environment keys are empty, to let the application mount and guide the user
+const finalConfig = isFirebaseConfigured ? resolvedConfig : {
+  apiKey: "mock-key-to-prevent-startup-crash",
+  authDomain: "mock-auth-domain.firebaseapp.com",
+  projectId: "mock-project-id",
+  storageBucket: "mock-bucket.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:12345a6789b:web:abcdef"
+};
+
+const app = initializeApp(finalConfig);
 export const db = getFirestore(app, resolvedConfig.firestoreDatabaseId || '(default)');
 export const auth = getAuth(app);
 
