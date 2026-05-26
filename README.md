@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/luxestay_logo.png" alt="LuxeStay Luxury Logo" width="240" />
+  <img src="./public/luxestay_logo.png" alt="LuxeStay Luxury Logo" width="1200" height="475" />
 </p>
 
 # 🏰 LuxeStay: Premium Sanctuary Rentals & Operations Node
