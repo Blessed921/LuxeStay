@@ -24,11 +24,11 @@ graph TD
     DB[(Firebase Firestore database)]:::firebase
     Gateway[Multi-Currency Sandbox Checkout]:::payment
 
-    Guest -->|Browse & Filter Listings| DB
+    Guest -->|Browse and Filter Listings| DB
     Guest -->|Initialize Settlement| Gateway
     Gateway -->|Submit Booking Session| DB
     DB -->|Real-Time Sync| Host
-    Host -->|Verify Inquiries & Trigger ACH Wire-outs| DB
+    Host -->|Verify Inquiries and Trigger ACH Wire-outs| DB
 ```
 
 ---
@@ -46,7 +46,7 @@ graph TD
     B -->|Select Sanctum| C(Listing Details /listing/:id)
     
     C -->|Choose Action: Reserve or Buy| D{Booking Modal Trigger}
-    D -->|Details Stage| E[Enter Stay Dates & Guests]
+    D -->|Details Stage| E[Enter Stay Dates and Guests]
     E -->|Fetch Listing Metadata| F[Generate Immutable Protocol Settlement ID]
     
     F --> G{Select Payment Instrumentation}
@@ -66,26 +66,33 @@ graph TD
     J -->|South Africa ZAR| M[Apply 1:18.2 FX conversion]
     J -->|Kenya KES| N[Apply 1:130.5 FX conversion]
     
-    K & L & M & N --> O[Enter Email, Phone Num & Mobile Money/Local Card]
+    K --> O[Enter Email, Phone Num and Mobile Money or Local Card]
+    L --> O
+    M --> O
+    N --> O
     O --> P_Paystack[Initiate Paystack Sandbox Regional Node]
 
     %% Validation Sequence
-    P_Wire & P_Stripe & P_Paystack --> Q{Validation Handshake Passed?}
+    P_Wire --> Q{Validation Handshake Passed?}
+    P_Stripe --> Q
+    P_Paystack --> Q
     Q -->|No| R[Render Inline Securing / CVC Clearance Error]
     R --> G
     
     %% Firestore Settlement
     Q -->|Yes: Create Booking| S[(Commit Document to 'bookings' collection)]
-    S --> T[Retrieve ServerTimestamp & Flag Authorized Params]
+    S --> T[Retrieve ServerTimestamp and Flag Authorized Params]
     T --> U(Redirect to /booking-success)
     
     %% Success Page
     U --> V{Detect Payment Method Query Parameters}
     V -->|stripe_authorized| W_Stripe[Display USD Card Token Success]:::success
-    V -->|paystack_authorized| W_Paystack[Display Dynamic Local Currency settled amount & symbol]:::success
-    V -->|transfer_authorized| W_Wire[Display ACH Reference & Wire Audit Record]:::success
+    V -->|paystack_authorized| W_Paystack[Display Dynamic Local Currency settled amount and symbol]:::success
+    V -->|transfer_authorized| W_Wire[Display ACH Reference and Wire Audit Record]:::success
     
-    W_Stripe & W_Paystack & W_Wire --> X[View Completed Itinerary & PDF Ticket in Profile]
+    W_Stripe --> X[View Completed Itinerary and PDF Ticket in Profile]
+    W_Paystack --> X
+    W_Wire --> X
 ```
 
 ---
@@ -107,7 +114,7 @@ flowchart LR
     I_List -->|Action| I_Respond[Send custom quote or message directly]
     
     T -->|Revenue Balance Box| T_Balance[Current Settled Gross Revenues]
-    T_Balance -->|Auto Split Protocol| T_Commission[Collect Platform commission & calculate Host safe share]
+    T_Balance -->|Auto Split Protocol| T_Commission[Collect Platform commission and calculate Host safe share]
     T_Commission -->|Withdrawal Trigger| T_Transfer[Request instant ACH Wire transfer to bank]
     T_Transfer -->|Interactive state| T_Progress[Ledger matches and updates Host balance in real-time]
 ```
