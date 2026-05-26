@@ -31,6 +31,8 @@ const ExplorePage = () => {
         
         if (fetched.length > 0) {
           setListings([...fetched, ...MOCK_LISTINGS]); // Mix for better demo
+        } else {
+          setListings(MOCK_LISTINGS);
         }
       } catch (error) {
         console.error("Failed to fetch listings, using mocks:", error);

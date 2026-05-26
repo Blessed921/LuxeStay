@@ -6,7 +6,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 // Support Vercel and production environments via standard VITE_ environment variables
 const metaEnv = (import.meta as any).env || {};
 
-const resolvedConfig = {
+export const resolvedConfig = {
   apiKey: metaEnv.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey,
   authDomain: metaEnv.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain,
   projectId: metaEnv.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId,
@@ -40,18 +40,6 @@ export const googleProvider = new GoogleAuthProvider();
 
 export const loginWithGoogle = () => signInWithPopup(auth, googleProvider);
 export const logout = () => signOut(auth);
-
-// Critical: Test connection
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
-    }
-  }
-}
-testConnection();
 
 export enum OperationType {
   CREATE = 'create',

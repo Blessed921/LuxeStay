@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import { Search, MapPin, Calendar, User, LayoutDashboard, LogOut, Menu, X, ArrowRight, Loader2, CreditCard, Building2, CheckCircle2, Shield, ArrowUpRight, Check, DollarSign } from "lucide-react";
-import ListingDetailPage from "./pages/ListingDetailPage";
-import ExplorePage from "./pages/ExplorePage";
-import HostPage from "./pages/HostPage";
-import PortfolioPage from "./pages/PortfolioPage";
-import ProfilePage from "./pages/ProfilePage";
-import BookingSuccessPage from "./pages/BookingSuccessPage";
-import ContactPage from "./pages/ContactPage";
+
+const ListingDetailPage = lazy(() => import("./pages/ListingDetailPage"));
+const ExplorePage = lazy(() => import("./pages/ExplorePage"));
+const HostPage = lazy(() => import("./pages/HostPage"));
+const PortfolioPage = lazy(() => import("./pages/PortfolioPage"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
+const BookingSuccessPage = lazy(() => import("./pages/BookingSuccessPage"));
+const ContactPage = lazy(() => import("./pages/ContactPage"));
 import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, isFirebaseConfigured } from "./lib/firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
@@ -282,11 +283,16 @@ export default function App() {
                 "VITE_FIREBASE_PROJECT_ID",
                 "VITE_FIREBASE_STORAGE_BUCKET",
                 "VITE_FIREBASE_MESSAGING_SENDER_ID",
-                "VITE_FIREBASE_APP_ID"
+                "VITE_FIREBASE_APP_ID",
+                "VITE_FIREBASE_FIRESTORE_DATABASE_ID"
               ].map(key => (
                 <div key={key} className="flex items-center justify-between bg-slate-950/55 p-2 rounded-lg border border-slate-800 text-left">
                   <span className="text-slate-300 font-semibold">{key}</span>
-                  <span className="text-[10px] text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded font-sans font-bold">Awaiting Value</span>
+                  {key === "VITE_FIREBASE_FIRESTORE_DATABASE_ID" ? (
+                    <span className="text-[10px] text-cyan-400 bg-cyan-400/10 px-2 py-0.5 rounded font-sans font-bold select-all">ai-studio-d1422b8e-308c-453a-831e-4c5839358a71</span>
+                  ) : (
+                    <span className="text-[10px] text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded font-sans font-bold">Awaiting Value</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -685,7 +691,13 @@ export default function App() {
     <Router>
       <div className="min-h-screen bg-[#f9fafb] text-slate-900 overflow-x-hidden selection:bg-black selection:text-white">
         <Navbar user={user} loading={loading} userRole={userRole} setUserRole={setUserRole} dbRole={dbRole} />
-        <Routes>
+        <Suspense fallback={
+          <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 bg-[#f9fafb]">
+            <Loader2 className="animate-spin text-slate-400 animate-duration-1000" size={24} />
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-mono font-bold">Synchronizing Portal...</p>
+          </div>
+        }>
+          <Routes>
           <Route path="/" element={
             <main>
               <Hero />
@@ -1076,6 +1088,7 @@ export default function App() {
           <Route path="/booking-success" element={<BookingSuccessPage />} />
           <Route path="/contact" element={<ContactPage />} />
         </Routes>
+        </Suspense>
         <Footer />
 
         {/* Transfer Portal Modal */}
