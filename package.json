@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "prebuild": "node -e \"const fs = require('fs'); if (!fs.existsSync('firebase-applet-config.json')) fs.writeFileSync('firebase-applet-config.json', '{}');\"",
+    "prelint": "npm run prebuild",
     "dev": "tsx server.ts",
     "build": "vite build",
     "start": "node server.ts",
