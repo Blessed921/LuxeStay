@@ -208,7 +208,7 @@ This information is restricted to platform operators and is not to be open to th
 
 ---
 
-## 7. Platform Operations & Cash Settlement Flow: Frequently Asked Questions (FAQ)
+## 6. Platform Operations & Cash Settlement Flow: Frequently Asked Questions (FAQ)
 
 This section details the financial operations, escrow logistics, refund mechanics, and account onboarding systems powering the LuxeStay platform.
 
