@@ -194,20 +194,25 @@ graph TD
 
 ---
 
+<!--
 ## 6. Key Presentation Visuals for Real Estate Software Buyers
 
-When pitching this application to real estate developers, agencies, or investors, emphasize these key highlights:
+[CONFIDENTIAL INTERNAL SYSTEM ARCHITECTURE DATA - HIDDEN FROM PUBLIC DISPLAY]
+This information is restricted to platform operators and is not to be open to the public or potential buyers.
 
-* **Dynamic Multi-Currency FX Engine (Paystack Ready):** LuxeStay isn't locked to single country territories. Guests can buy luxury assets anywhere in the world and settle payment automatically converted into **NGN, GHS, ZAR, or KES** dynamically in real-time. This reduces conversion friction for diaspora investors.
+* **Dynamic Multi-Currency FX Engine (Paystack Ready):** LuxeStay isn't locked to single country territories. Guests can buy luxury assets anywhere in the world and settle payment automatically converted into NGN, GHS, ZAR, or KES dynamically in real-time. This reduces conversion friction for diaspora investors.
 * **Instant ACH Split Commission Settlements:** Real-time simulations demonstrate to operators how commissions automatedly route between platform handlers and physical estate managers instantly.
 * **Robust Offline Resilience:** Integrated with standard Firebase IndexedDB caching so listing caches persist under poor connectivity conditions.
 * **Fully Responsive Mobile-First Client:** Seamlessly transitions into full-bleed overlay drawers for tablet, phone, and standard desktop viewports.
+-->
 
 ---
 
-## 7. Direct Cash Settlement, Escrow Wallets, Refunds & Host Onboarding (Pitch Highlight)
+## 7. Platform Operations & Cash Settlement Flow: Frequently Asked Questions (FAQ)
 
-This section maps out the financial flows of LuxeStay, explaining exactly how funds travel from a guest's bank account to the platform, and finally to the host's account.
+This section details the financial operations, escrow logistics, refund mechanics, and account onboarding systems powering the LuxeStay platform.
+
+### Platform Escrow & Ledger Routing Ledger Visual Map
 
 ```
 [Guest Checkout Payment] 
@@ -232,18 +237,21 @@ This section maps out the financial flows of LuxeStay, explaining exactly how fu
  └───────────────────────────┘
 ```
 
-### I. Does the application "integrated revenue" act as a wallet?
-**Yes.** LuxeStay uses a **Double-Entry Virtual Ledger Escrow Model** similar to Airbnb and Uber. 
-* Physical dollars, pounds, or naira are processed and collected instantly into the **Platform Operator’s/Admin’s main integrated gateway account** (e.g. the main Stripe merchant account or Paystack enterprise portal). 
+---
+
+### Q1: Does the application "integrated revenue" act as a wallet?
+**A: Yes.** LuxeStay utilizes a strict **Double-Entry Virtual Ledger Escrow Model** (similar to enterprise models like Airbnb and Uber).
+* Real currency is processed and collected instantly into the **Platform Operator’s/Admin’s main integrated gateway account** (such as the primary Stripe merchant account or Paystack enterprise portal).
 * To prevent escrow compliance friction, funds are *not* automatically split and forwarded to the host's personal bank account on direct checkout. 
-* Instead, the system makes a ledger entry into Firestore, creating a virtual balance representation (a **"Virtual Wallet"**) in the host's interactive dashboard. The host can view their gross balance, platform processing fees, and net balance securely.
+* Instead, the system records an encrypted ledger entry on Firestore, establishing a virtual balance representation (a **"Virtual Wallet"**) in the host's interactive dashboard. This allows hosts to review gross balance holdings, platform processing fees, and accrued safe net-share amounts.
 
-### II. Is it the Admin that pays the Host?
-* **Automated Mode (Connect APIs):** The system is built to support automated payouts on withdrawal. When the Host clicks **"Transfer to Bank"**, the system calls the integrated gateway payout routes (e.g. Stripe Connect Express or Paystack Transfer Recipient API) to automatically push funds from the platform merchant account down to the host's account.
-* **Manual Operational Mode (Enterprise Standard):** Alternatively, the payout enqueues an Admin Review Protocol. The platform operator/administrator gets notified, and they issue a bank wire or SWIFT transfer to the host's specified IBAN/routing code, clicking "Approve" in the dashboard to debit the virtual ledger.
+### Q2: Is it the Admin that pays the Host?
+**A: Payout clearance can be executed via both Automated and Manual operational modes:**
+* **Automated Mode (Connect APIs):** The system supports automated payouts on withdrawal. When the Host clicks **"Transfer to Bank"**, the platform executes payout API endpoints (e.g. Stripe Connect Express or Paystack Transfer Recipient API) to push funds from the platform merchant ledger directly to the host's registered banking target.
+* **Manual Operational Mode (Enterprise Standard):** Alternatively, the payout triggers an Admin Review Protocol. The platform operator/administrator is notified, they issue a bank wire or SWIFT transfer to the host's specified IBAN/routing code, and click "Approve" in the dashboard to debit the virtual ledger.
 
-### III. Refund Logistics: Who pays if a guest cancels?
-LuxeStay manages cancellation logistics safely from the escrow layer to protect operational cash-flows:
+### Q3: Refund Logistics: Who pays if a guest cancels?
+**A: LuxeStay manages cancellation logistics safely from the escrow layer to protect operational cash-flows:**
 1. **Pre-Payout Phase (Funds still in Platform Escrow):**
    * Since the real money is physically residing in the central LuxeStay merchant account, if a cancellation occurs, the **Admin/Platform processes the physical refund** back to the Guest's original card.
    * The host's virtual wallet ledger in the app is automatically adjusted down by the transaction amount to reflect the cancelled reservation.
@@ -251,7 +259,8 @@ LuxeStay manages cancellation logistics safely from the escrow layer to protect 
    * The **Admin/Platform still issues the refund to the Guest immediately** to uphold platform trust.
    * The host's virtual ledger wallet is placed in a **negative balance state** (e.g. `-$1,200`). All future bookings confirmed for that host’s properties will go directly to clearing that negative balance before the host can trigger payouts again.
 
-### IV. When and where does the Host upload their bank details?
+### Q4: When and where does the Host upload their bank details?
+**A: Hosts securely link their physical accounts under the Host Dashboard:**
 * Hosts securely link their physical accounts under the **Destination Credentials** subsection of the **Host Dashboard**.
 * The host can click **"+ Link Account"** to reveal a card validation drawer where they input:
   1. **Institution Name** (e.g., HSBC, Access Bank, Chase)
